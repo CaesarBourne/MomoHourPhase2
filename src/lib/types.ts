@@ -218,7 +218,9 @@ export type MomoHourPermission =
   | 'drops:end'
   | 'rewards:view'
   | 'rewards:export'
-  | 'rewards:trigger';
+  | 'rewards:trigger'
+  | 'phase2:view'
+  | 'phase2:manage';
 
 export const MOMO_HOUR_PERMISSIONS: { value: MomoHourPermission; label: string }[] = [
   { value: 'bouquets:view', label: 'View bouquets & services' },
@@ -230,8 +232,94 @@ export const MOMO_HOUR_PERMISSIONS: { value: MomoHourPermission; label: string }
   { value: 'drops:end', label: 'End a live drop early' },
   { value: 'rewards:view', label: 'View reward history' },
   { value: 'rewards:export', label: 'Export reward history as CSV' },
-  { value: 'rewards:trigger', label: 'Manually trigger a reward (testing)' }
+  { value: 'rewards:trigger', label: 'Manually trigger a reward (testing)' },
+  { value: 'phase2:view', label: 'View Phase 2 windows, datalake & warehouse' },
+  { value: 'phase2:manage', label: 'Upload files & trigger fulfilment runs' }
 ];
+
+// --- MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md) -----------------------
+// Mirrors GHA/src/momo-hour-phase2/entities/*.
+
+export interface Phase2Window {
+  id: string;
+  gha_bouquet_id: string;
+  gha_bouquet_label: string;
+  gha_drop_id: string;
+  gha_drop_label: string | null;
+  label: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface Phase2Upload {
+  id: string;
+  window_id: string;
+  source_file: string;
+  file_hash: string;
+  format: 'CSV' | 'JSON';
+  uploaded_by: string;
+  total_rows: number;
+  qualifying_rows: number;
+  rejected_rows: number;
+  duplicate_rows: number;
+  status: 'PENDING' | 'LOADING' | 'LOADED' | 'FAILED';
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface Phase2DatalakeRow {
+  id: string;
+  window_id: string;
+  msisdn: string;
+  amount: string | number;
+  date: string;
+  processing_status: 'UNPROCESSED' | 'PROCESSING' | 'FULFILLED' | 'PROCESSING_FAILED';
+  last_run_id: string | null;
+  failure_reason: string | null;
+}
+
+export interface Phase2FulfilmentRun {
+  id: string;
+  window_id: string;
+  triggered_by: string;
+  selection_mode: 'SUBSET' | 'ALL';
+  batch_cap: number;
+  total_records: number;
+  succeeded_records: number;
+  failed_records: number;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PARTIALLY_FAILED';
+  selected_row_ids: string[];
+  next_batch_number: number;
+  total_batches: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface Phase2PendingReward {
+  id: string;
+  window_id: string;
+  msisdn: string;
+  amount: string | number;
+  fulfilment_run_id: string;
+  reward_transaction_id: string | null;
+  status: 'PENDING' | 'FULFILLED' | 'REJECTED';
+  date: string;
+  updated_at: string | null;
+}
+
+export interface CreateWindowInput {
+  ghaBouquetId: string;
+  ghaDropId: string;
+  label: string;
+}
+
+export interface StartFulfilmentRunInput {
+  windowId: string;
+  selectionMode: 'SUBSET' | 'ALL';
+  datalakeRowIds?: string[];
+  batchCap?: number;
+}
 
 export interface AdminAccount {
   email: string;

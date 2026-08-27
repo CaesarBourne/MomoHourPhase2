@@ -22,5 +22,14 @@ export const queryKeys = {
       filters.fulfilmentStatus ?? null,
       filters.limit ?? null
     ] as const,
-  admins: (baseUrl: string) => ['admins', baseUrl] as const
+  admins: (baseUrl: string) => ['admins', baseUrl] as const,
+
+  // MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md)
+  phase2Windows: (baseUrl: string) => ['phase2-windows', baseUrl] as const,
+  phase2Datalake: (baseUrl: string, windowId: string, processingStatus?: string) =>
+    ['phase2-datalake', baseUrl, windowId, processingStatus ?? null] as const,
+  phase2FulfilmentRun: (baseUrl: string, runId: string) =>
+    ['phase2-fulfilment-run', baseUrl, runId] as const,
+  phase2PendingRewards: (baseUrl: string, windowId: string) =>
+    ['phase2-pending-rewards', baseUrl, windowId] as const
 };

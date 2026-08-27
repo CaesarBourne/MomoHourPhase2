@@ -8,8 +8,8 @@ import { ThemeProvider } from '@/providers/ThemeProvider';
 import { AppShell } from '@/components/layout/AppShell';
 
 export const metadata: Metadata = {
-  title: 'MoMo Hour Admin Portal',
-  description: 'Administer MoMo Hour bouquets, services, schedules, drops, and rewards.'
+  title: 'MoMo Hour Phase 2 Portal',
+  description: 'Manual fulfilment data upload ETL - windows, datalake, fulfilment runs, and the pending-reward data warehouse.'
 };
 
 // Applies the saved/system theme to <html> BEFORE React hydrates, so there's
