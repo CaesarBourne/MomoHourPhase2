@@ -94,3 +94,44 @@ export function useAdmins() {
     queryFn: async () => unwrapOrThrow(await api.listAdmins(baseUrl))
   });
 }
+
+// --- MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md) -----------------------
+
+export function usePhase2Windows() {
+  const { baseUrl } = useBaseUrl();
+  return useQuery({
+    queryKey: queryKeys.phase2Windows(baseUrl),
+    queryFn: async () => unwrapOrThrow(await api.listWindows(baseUrl))
+  });
+}
+
+export function usePhase2Datalake(windowId: string, processingStatus?: string) {
+  const { baseUrl } = useBaseUrl();
+  return useQuery({
+    queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus),
+    queryFn: async () =>
+      unwrapOrThrow(await api.listDatalake(baseUrl, windowId, { processingStatus })),
+    enabled: !!windowId
+  });
+}
+
+/** Polls while a run still has unprocessed batches - the portal doesn't
+ * auto-advance a run itself (see WindowDetail's "Process next batch"
+ * button), so this only needs to reflect state as batches are processed. */
+export function usePhase2FulfilmentRun(runId: string | null) {
+  const { baseUrl } = useBaseUrl();
+  return useQuery({
+    queryKey: queryKeys.phase2FulfilmentRun(baseUrl, runId ?? ''),
+    queryFn: async () => unwrapOrThrow(await api.getFulfilmentRun(baseUrl, runId as string)),
+    enabled: !!runId
+  });
+}
+
+export function usePhase2PendingRewards(windowId: string) {
+  const { baseUrl } = useBaseUrl();
+  return useQuery({
+    queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId),
+    queryFn: async () => unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId)),
+    enabled: !!windowId
+  });
+}

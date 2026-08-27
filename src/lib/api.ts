@@ -12,14 +12,21 @@ import type {
   CreateAdminResult,
   CreateScheduleInput,
   CreateScheduleResult,
+  CreateWindowInput,
   EndDropInput,
   EndDropResult,
   GetActiveResponse,
   ListRewardsInput,
   ListRewardsResult,
+  Phase2DatalakeRow,
+  Phase2FulfilmentRun,
+  Phase2PendingReward,
+  Phase2Upload,
+  Phase2Window,
   RemoveAdminResult,
   Schedule,
   ServiceMap,
+  StartFulfilmentRunInput,
   TogglePermissionInput,
   TogglePermissionResult,
   TriggerRewardInput,
@@ -314,4 +321,122 @@ export async function removeAdmin(
     email
   });
   return asBusinessResult(result, 'removed');
+}
+
+// --- MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md) -----------------------
+// Windows tie one uploaded file to one existing bouquet's past drop; the
+// bouquet/drop pickers reuse listBouquets/listDrops above unchanged - Phase
+// 2 never creates a bouquet or drop of its own.
+
+export function createWindow(
+  baseUrl: string,
+  input: CreateWindowInput
+): Promise<ApiResult<Phase2Window>> {
+  return postJson(baseUrl, '/momo-hour-phase2/windows', input as unknown as Record<string, unknown>);
+}
+
+export function listWindows(baseUrl: string): Promise<ApiResult<Phase2Window[]>> {
+  return postJson(baseUrl, '/momo-hour-phase2/windows/list', {});
+}
+
+/**
+ * Multipart upload - deliberately NOT postJson (this is a file body, not
+ * JSON). GHA's global AuthMiddleware exempts multipart/form-data requests
+ * from its "non-empty JSON body" check, so windowId travels as a form field
+ * rather than the JSON body postJson otherwise relies on.
+ */
+export async function uploadPhase2File(
+  baseUrl: string,
+  windowId: string,
+  file: File
+): Promise<ApiResult<Phase2Upload>> {
+  const session = getCurrentSession();
+  const headers: Record<string, string> = { metadata: METADATA_HEADER_VALUE };
+  if (session) {
+    headers['Authorization'] = `Bearer ${session.token}`;
+  }
+
+  const form = new FormData();
+  form.append('windowId', windowId);
+  form.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/momo-hour-phase2/uploads`, {
+      method: 'POST',
+      headers,
+      body: form
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      kind: 'network',
+      message: `Could not reach ${baseUrl} - ${(error as Error).message}`
+    };
+  }
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    // leave null
+  }
+
+  if (!res.ok) {
+    const serverMessage =
+      data && typeof data === 'object' && 'message' in data
+        ? String((data as { message?: unknown }).message)
+        : null;
+    return {
+      ok: false,
+      kind: 'network',
+      message: serverMessage || `Upload failed with HTTP ${res.status}`
+    };
+  }
+
+  return { ok: true, data: data as Phase2Upload };
+}
+
+export function getPhase2Upload(baseUrl: string, uploadId: string): Promise<ApiResult<Phase2Upload>> {
+  return postJson(baseUrl, '/momo-hour-phase2/uploads/get', { uploadId });
+}
+
+export function listDatalake(
+  baseUrl: string,
+  windowId: string,
+  filters: { processingStatus?: string; limit?: number } = {}
+): Promise<ApiResult<Phase2DatalakeRow[]>> {
+  return postJson(baseUrl, '/momo-hour-phase2/datalake/list', { windowId, ...filters });
+}
+
+export function startFulfilmentRun(
+  baseUrl: string,
+  input: StartFulfilmentRunInput
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(
+    baseUrl,
+    '/momo-hour-phase2/fulfilment-runs',
+    input as unknown as Record<string, unknown>
+  );
+}
+
+export function processNextFulfilmentBatch(
+  baseUrl: string,
+  runId: string
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/process-next-batch', { runId });
+}
+
+export function getFulfilmentRun(
+  baseUrl: string,
+  runId: string
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/get', { runId });
+}
+
+export function listPendingRewards(
+  baseUrl: string,
+  windowId: string
+): Promise<ApiResult<Phase2PendingReward[]>> {
+  return postJson(baseUrl, '/momo-hour-phase2/pending-rewards/list', { windowId });
 }
