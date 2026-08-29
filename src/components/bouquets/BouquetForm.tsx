@@ -36,6 +36,7 @@ export function BouquetForm({
     category: bouquet?.category ?? '',
     rewardType: bouquet?.reward_type ?? 'cashback',
     rewardValue: bouquet?.reward_value ?? '',
+    npontuDataBundleCode: bouquet?.npontu_data_bundle_code ?? '',
     matchRatio: bouquet ? String(bouquet.match_ratio) : '1',
     capAmount: bouquet ? String(bouquet.cap_amount) : '100',
     startDate: toDateInputValue(bouquet?.start_date),
@@ -51,6 +52,7 @@ export function BouquetForm({
         category: form.category.trim(),
         rewardType: form.rewardType,
         rewardValue: form.rewardValue.trim() || undefined,
+        npontuDataBundleCode: form.npontuDataBundleCode.trim() || undefined,
         matchRatio: form.matchRatio ? Number(form.matchRatio) : undefined,
         capAmount: form.capAmount ? Number(form.capAmount) : undefined,
         startDate: form.startDate || undefined,
@@ -149,6 +151,21 @@ export function BouquetForm({
           />
         </Field>
       </div>
+
+      {form.rewardType === 'data' && (
+        <Field
+          label="Npontu data bundle code"
+          htmlFor="npontuDataBundleCode"
+          hint="The real code sent to Npontu's bundle-provisioning API (e.g. &quot;500MB-1D&quot;) - distinct from the display-only reward value above. Used by MoMo Hour Phase 2's fulfilment pipeline so each bouquet can provision a different bundle."
+        >
+          <Input
+            id="npontuDataBundleCode"
+            placeholder="500MB-1D"
+            value={form.npontuDataBundleCode}
+            onChange={e => setForm(f => ({ ...f, npontuDataBundleCode: e.target.value }))}
+          />
+        </Field>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Match ratio" htmlFor="matchRatio" hint="1 = 1:1 cashback">

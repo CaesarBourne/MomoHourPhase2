@@ -7,6 +7,8 @@ export interface Bouquet {
   category: string;
   reward_type: string;
   reward_value: string | null;
+  /** Npontu bundle-provisioning data code (e.g. "500MB-1D") for reward_type = 'data' - distinct from reward_value's display string. Only consumed by MoMo Hour Phase 2's fulfilment pipeline. */
+  npontu_data_bundle_code: string | null;
   match_ratio: string | number;
   cap_amount: string | number;
   start_date: string | null;
@@ -106,6 +108,7 @@ export interface UpsertBouquetInput {
   category: string;
   rewardType?: string;
   rewardValue?: string;
+  npontuDataBundleCode?: string;
   matchRatio?: number;
   capAmount?: number;
   startDate?: string;
@@ -246,6 +249,7 @@ export interface Phase2Window {
   gha_bouquet_label: string;
   gha_drop_id: string;
   gha_drop_label: string | null;
+  service_key: string | null;
   label: string;
   created_by: string;
   created_at: string;
@@ -288,12 +292,18 @@ export interface Phase2FulfilmentRun {
   total_records: number;
   succeeded_records: number;
   failed_records: number;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PARTIALLY_FAILED';
+  status: 'PENDING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED' | 'PARTIALLY_FAILED';
   selected_row_ids: string[];
   next_batch_number: number;
   total_batches: number;
   created_at: string;
   completed_at: string | null;
+}
+
+/** Cursor (keyset) page - same shape as ListRewardsResult. */
+export interface Phase2Page<T> {
+  data: T[];
+  nextCursor: string | null;
 }
 
 export interface Phase2PendingReward {
@@ -312,6 +322,8 @@ export interface CreateWindowInput {
   ghaBouquetId: string;
   ghaDropId: string;
   label: string;
+  /** Optional momo_hour_service.service_key under ghaBouquetId - lets the window use that service's own reward_type/reward_value override instead of the bouquet's blanket default. */
+  serviceKey?: string;
 }
 
 export interface StartFulfilmentRunInput {

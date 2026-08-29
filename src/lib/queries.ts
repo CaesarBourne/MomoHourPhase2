@@ -105,12 +105,17 @@ export function usePhase2Windows() {
   });
 }
 
+/** Cursor-paginated - call fetchNextPage() for "Load more" (docus/MOMO-HOUR-PHASE2.md's datalake can run into the thousands, e.g. Jumo Loans' ~9,000 rows). */
 export function usePhase2Datalake(windowId: string, processingStatus?: string) {
   const { baseUrl } = useBaseUrl();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus),
-    queryFn: async () =>
-      unwrapOrThrow(await api.listDatalake(baseUrl, windowId, { processingStatus })),
+    queryFn: async ({ pageParam }) =>
+      unwrapOrThrow(
+        await api.listDatalake(baseUrl, windowId, { processingStatus, cursor: pageParam })
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
     enabled: !!windowId
   });
 }
@@ -129,9 +134,12 @@ export function usePhase2FulfilmentRun(runId: string | null) {
 
 export function usePhase2PendingRewards(windowId: string) {
   const { baseUrl } = useBaseUrl();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId),
-    queryFn: async () => unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId)),
+    queryFn: async ({ pageParam }) =>
+      unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId, { cursor: pageParam })),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
     enabled: !!windowId
   });
 }

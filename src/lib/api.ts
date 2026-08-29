@@ -20,6 +20,7 @@ import type {
   ListRewardsResult,
   Phase2DatalakeRow,
   Phase2FulfilmentRun,
+  Phase2Page,
   Phase2PendingReward,
   Phase2Upload,
   Phase2Window,
@@ -41,6 +42,18 @@ export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: 'network'; message: string }
   | { ok: false; kind: 'business'; message: string; raw: unknown };
+
+/** First failed result among several ApiResults of possibly-different T's - for rendering one ErrorBanner across several sibling mutations (e.g. FulfilmentRunPanel's pause/resume/stop/process-batch). */
+export function firstApiError(
+  ...results: (ApiResult<unknown> | undefined)[]
+): Extract<ApiResult<unknown>, { ok: false }> | undefined {
+  for (const result of results) {
+    if (result && !result.ok) {
+      return result;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Every GHA `/momo-hour/*` route is a POST protected by a global
@@ -283,6 +296,21 @@ export function listDrops(
   return postJson(baseUrl, '/momo-hour/drops/list', { extBouquetId });
 }
 
+/**
+ * Resolve PENDING_MANUAL reward rows whose underlying transaction can be
+ * polled for its real outcome (currently billpayment only) - checks each
+ * row's real status via Ericsson EM's gettransactionstatus and, if
+ * confirmed successful, actually credits the reward. Either rewardIds (one
+ * or several specific rows) or dropId (every eligible row for that
+ * drop/window) is required.
+ */
+export function checkAndFulfilRewards(
+  baseUrl: string,
+  input: { rewardIds?: string[]; dropId?: string; serviceKey?: string }
+): Promise<ApiResult<{ rewardId: string; msisdn: string; outcome: string }[]>> {
+  return postJson(baseUrl, '/momo-hour/rewards/check-and-fulfil', input);
+}
+
 // --- Admin accounts (super admin only) --------------------------------
 
 export function listAdmins(baseUrl: string): Promise<ApiResult<AdminAccount[]>> {
@@ -337,6 +365,15 @@ export function createWindow(
 
 export function listWindows(baseUrl: string): Promise<ApiResult<Phase2Window[]>> {
   return postJson(baseUrl, '/momo-hour-phase2/windows/list', {});
+}
+
+/** Correct a window's serviceKey after the fact (e.g. it was created before the intended service was whitelisted) - pass null to clear back to the bouquet's own default. */
+export function updateWindowService(
+  baseUrl: string,
+  windowId: string,
+  serviceKey: string | null
+): Promise<ApiResult<Phase2Window>> {
+  return postJson(baseUrl, '/momo-hour-phase2/windows/update-service', { windowId, serviceKey });
 }
 
 /**
@@ -404,9 +441,17 @@ export function getPhase2Upload(baseUrl: string, uploadId: string): Promise<ApiR
 export function listDatalake(
   baseUrl: string,
   windowId: string,
-  filters: { processingStatus?: string; limit?: number } = {}
-): Promise<ApiResult<Phase2DatalakeRow[]>> {
+  filters: { processingStatus?: string; limit?: number; cursor?: string } = {}
+): Promise<ApiResult<Phase2Page<Phase2DatalakeRow>>> {
   return postJson(baseUrl, '/momo-hour-phase2/datalake/list', { windowId, ...filters });
+}
+
+export function deleteDatalakeRows(
+  baseUrl: string,
+  windowId: string,
+  datalakeRowIds: string[]
+): Promise<ApiResult<{ deletedCount: number }>> {
+  return postJson(baseUrl, '/momo-hour-phase2/datalake/delete', { windowId, datalakeRowIds });
 }
 
 export function startFulfilmentRun(
@@ -427,6 +472,27 @@ export function processNextFulfilmentBatch(
   return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/process-next-batch', { runId });
 }
 
+export function pauseFulfilmentRun(
+  baseUrl: string,
+  runId: string
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/pause', { runId });
+}
+
+export function resumeFulfilmentRun(
+  baseUrl: string,
+  runId: string
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/resume', { runId });
+}
+
+export function stopFulfilmentRun(
+  baseUrl: string,
+  runId: string
+): Promise<ApiResult<Phase2FulfilmentRun>> {
+  return postJson(baseUrl, '/momo-hour-phase2/fulfilment-runs/stop', { runId });
+}
+
 export function getFulfilmentRun(
   baseUrl: string,
   runId: string
@@ -436,7 +502,8 @@ export function getFulfilmentRun(
 
 export function listPendingRewards(
   baseUrl: string,
-  windowId: string
-): Promise<ApiResult<Phase2PendingReward[]>> {
-  return postJson(baseUrl, '/momo-hour-phase2/pending-rewards/list', { windowId });
+  windowId: string,
+  filters: { limit?: number; cursor?: string } = {}
+): Promise<ApiResult<Phase2Page<Phase2PendingReward>>> {
+  return postJson(baseUrl, '/momo-hour-phase2/pending-rewards/list', { windowId, ...filters });
 }

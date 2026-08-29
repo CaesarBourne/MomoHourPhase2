@@ -44,6 +44,7 @@ export default function WindowsPage() {
             <Thead>
               <Th>Label</Th>
               <Th>Bouquet</Th>
+              <Th>Service</Th>
               <Th>Drop</Th>
               <Th>Created by</Th>
               <Th>Created</Th>
@@ -56,6 +57,7 @@ export default function WindowsPage() {
                   <Td>
                     {w.gha_bouquet_id} - {w.gha_bouquet_label}
                   </Td>
+                  <Td>{w.service_key ?? <span className="text-slate-400">bouquet default</span>}</Td>
                   <Td>{w.gha_drop_label ?? w.gha_drop_id}</Td>
                   <Td>{w.created_by}</Td>
                   <Td>{new Date(w.created_at).toLocaleString()}</Td>

@@ -5,7 +5,13 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 
 const NAV_ITEMS = [
-  { href: '/windows', label: 'Windows', icon: '⧉' },
+  { href: '/', label: 'Dashboard', icon: '⌂' },
+  { href: '/bouquets', label: 'Bouquets', icon: '◆' },
+  { href: '/services', label: 'Services', icon: '⚙' },
+  { href: '/schedule', label: 'Schedule', icon: '▤' },
+  { href: '/drops', label: 'Drops', icon: '⚡' },
+  { href: '/rewards', label: 'Rewards', icon: '★' },
+  { href: '/windows', label: 'Phase 2 — Windows', icon: '⧉' },
   { href: '/settings', label: 'Settings', icon: '☰' }
 ];
 
