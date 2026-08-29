@@ -2,28 +2,60 @@
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { QueryState } from '@/components/ui/QueryState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Card } from '@/components/ui/Card';
 import { Input, Select } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { RefreshButton } from '@/components/ui/RefreshButton';
 import { ExportCsvButton } from '@/components/ui/ExportCsvButton';
-import { RewardsTable } from '@/components/rewards/RewardsTable';
+import { RewardsTable, isCheckableReward } from '@/components/rewards/RewardsTable';
 import { useBouquets, useDrops, useRewards } from '@/lib/queries';
 import { useAuth } from '@/lib/auth';
+import { useBaseUrl } from '@/lib/base-url';
+import { useToast } from '@/providers/ToastProvider';
+import { queryKeys } from '@/lib/query-keys';
 import { formatGhanaWindow, ghanaDateString } from '@/lib/date';
 import { exportToCsv } from '@/lib/csv';
+import * as api from '@/lib/api';
 import type { ListRewardsInput, RewardHistory } from '@/lib/types';
 
 const EMPTY_FILTERS: ListRewardsInput = {};
+
+/** "outcome" strings GHA's checkAndFulfilPendingManualRewards returns, per row. */
+const OUTCOME_LABEL: Record<string, string> = {
+  FULFILLED: 'fulfilled',
+  STILL_PENDING: 'still pending',
+  PAYMENT_FAILED: 'payment failed',
+  FULFILMENT_FAILED: 'fulfilment failed',
+  STATUS_UNKNOWN: 'status unrecognized',
+  NO_FINANCIAL_TRANSACTION_ID: 'no transaction id on file',
+  ERROR: 'error'
+};
+
+function summarizeOutcomes(results: { outcome: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const r of results) {
+    counts.set(r.outcome, (counts.get(r.outcome) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([outcome, count]) => `${count} ${OUTCOME_LABEL[outcome] ?? outcome}`)
+    .join(', ');
+}
 
 function RewardsPageInner() {
   const searchParams = useSearchParams();
   const bouquets = useBouquets();
   const { hasPermission } = useAuth();
+  const { baseUrl } = useBaseUrl();
+  const { show } = useToast();
+  const queryClient = useQueryClient();
   const canExport = hasPermission('rewards:export');
+  const canTrigger = hasPermission('rewards:trigger');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [form, setForm] = useState({
     msisdn: '',
@@ -49,6 +81,57 @@ function RewardsPageInner() {
   // table/export. A drop can carry hundreds of thousands of rows in
   // production, so nothing here ever tries to load "everything" at once.
   const rows = data?.pages.flatMap(page => page.data) ?? [];
+  const checkableRows = rows.filter(isCheckableReward);
+
+  const invalidateRewards = () =>
+    queryClient.invalidateQueries({ queryKey: ['rewards'], exact: false });
+
+  const checkOne = useMutation({
+    mutationFn: (reward: RewardHistory) => api.checkAndFulfilRewards(baseUrl, { rewardIds: [reward.id] }),
+    onSuccess: result => {
+      if (!result.ok) return;
+      invalidateRewards();
+      show({ tone: 'info', title: 'Status checked', description: summarizeOutcomes(result.data) });
+    }
+  });
+
+  const checkSelected = useMutation({
+    mutationFn: () => api.checkAndFulfilRewards(baseUrl, { rewardIds: Array.from(selected) }),
+    onSuccess: result => {
+      if (!result.ok) return;
+      invalidateRewards();
+      setSelected(new Set());
+      show({
+        tone: 'info',
+        title: `Checked ${result.data.length} selected`,
+        description: summarizeOutcomes(result.data)
+      });
+    }
+  });
+
+  const checkAllForDrop = useMutation({
+    mutationFn: () => api.checkAndFulfilRewards(baseUrl, { dropId: filters.dropId as string }),
+    onSuccess: result => {
+      if (!result.ok) return;
+      invalidateRewards();
+      show({
+        tone: 'info',
+        title: `Checked ${result.data.length} billpayment PENDING_MANUAL row(s) for this drop`,
+        description: result.data.length ? summarizeOutcomes(result.data) : undefined
+      });
+    }
+  });
+
+  const toggleSelected = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkError = api.firstApiError(checkOne.data, checkSelected.data, checkAllForDrop.data);
 
   // Deep link from the Bouquets page ("View rewards" on a bouquet card) -
   // pre-fill and immediately apply the bouquet filter on load.
@@ -201,6 +284,47 @@ function RewardsPageInner() {
         </form>
       </Card>
 
+      {bulkError && (
+        <div className="mb-4">
+          <ErrorBanner kind={bulkError.kind} message={bulkError.message} />
+        </div>
+      )}
+
+      {canTrigger && (checkableRows.length > 0 || filters.dropId) && (
+        <Card className="mb-4 flex flex-wrap items-center gap-3 p-3">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Billpayment rows stuck PENDING_MANUAL — check the real payment status and fulfil once
+            confirmed.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={selected.size === 0}
+            loading={checkSelected.isPending}
+            onClick={() => checkSelected.mutate()}
+          >
+            Check &amp; fulfil selected ({selected.size})
+          </Button>
+          {filters.dropId && (
+            <Button
+              size="sm"
+              loading={checkAllForDrop.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Check & fulfil every billpayment PENDING_MANUAL row for this drop? This may take a while for a large drop.'
+                  )
+                ) {
+                  checkAllForDrop.mutate();
+                }
+              }}
+            >
+              Check &amp; fulfil all billpayment for this drop
+            </Button>
+          )}
+        </Card>
+      )}
+
       <QueryState isLoading={isLoading} isError={isError} error={error}>
         {rows.length === 0 ? (
           <EmptyState
@@ -213,7 +337,14 @@ function RewardsPageInner() {
           />
         ) : (
           <Card>
-            <RewardsTable rewards={rows} onSelectDrop={selectDrop} />
+            <RewardsTable
+              rewards={rows}
+              onSelectDrop={selectDrop}
+              selected={canTrigger ? selected : undefined}
+              onToggleSelected={canTrigger ? toggleSelected : undefined}
+              onCheckStatus={canTrigger ? reward => checkOne.mutate(reward) : undefined}
+              checkingRewardId={checkOne.isPending ? checkOne.variables?.id : null}
+            />
             {hasNextPage && (
               <div className="flex justify-center border-t border-slate-100 p-3 dark:border-slate-800">
                 <Button

@@ -9,33 +9,45 @@ import { useBaseUrl } from '@/lib/base-url';
 import { useToast } from '@/providers/ToastProvider';
 import { queryKeys } from '@/lib/query-keys';
 import * as api from '@/lib/api';
-import { useBouquets, useDrops } from '@/lib/queries';
+import { useBouquets, useDrops, useServices } from '@/lib/queries';
+import { REPORT_TYPES } from '@/lib/phase2-config';
 
 /**
  * Creates a Phase 2 window: one uploaded file, tied to one existing GHA
- * bouquet's PAST drop (docus/MOMO-HOUR-PHASE2.md §5.1). Both pickers reuse
- * the exact same bouquet/drop lists Phase 1's own pages use - Phase 2 never
- * defines a bouquet or drop of its own, only references one that already
- * ran.
+ * bouquet's PAST drop, plus (for Bundle) that bouquet's fixed
+ * `bundle_manual` service. Neither the bouquet nor the service is a free
+ * choice — an admin only ever picks the report type and one past drop.
  */
 export function WindowForm({ onSuccess }: { onSuccess: () => void }) {
   const { baseUrl } = useBaseUrl();
   const { show } = useToast();
   const queryClient = useQueryClient();
   const bouquets = useBouquets();
+  const services = useServices();
 
-  const [ghaBouquetId, setGhaBouquetId] = useState('');
+  const [reportType, setReportType] = useState<(typeof REPORT_TYPES)[number]>(REPORT_TYPES[0]);
   const [ghaDropId, setGhaDropId] = useState('');
   const [label, setLabel] = useState('');
 
-  const drops = useDrops(ghaBouquetId || undefined);
-  // "Past" per docus/MOMO-HOUR-PHASE2.md §9 - not yet formally resolved
-  // upstream, so this treats any drop that has already ended (end_at in the
-  // past) as eligible, which covers both reference files' real cases.
+  const ghaBouquetId = reportType.extBouquetId;
+  const serviceKey = reportType.serviceKey;
+  const bouquetExists = (bouquets.data ?? []).some(b => b.ext_bouquet_id === ghaBouquetId);
+  const serviceExists =
+    !serviceKey ||
+    (services.data ?? []).some(
+      s => s.service_key === serviceKey && s.ext_bouquet_id === ghaBouquetId && s.status === 'ACTIVE'
+    );
+  const drops = useDrops(ghaBouquetId);
   const pastDrops = (drops.data ?? []).filter(d => new Date(d.end_at).getTime() <= Date.now());
 
   const mutation = useMutation({
-    mutationFn: () => api.createWindow(baseUrl, { ghaBouquetId, ghaDropId, label }),
+    mutationFn: () =>
+      api.createWindow(baseUrl, {
+        ghaBouquetId,
+        ghaDropId,
+        label,
+        serviceKey: serviceKey ?? undefined
+      }),
     onSuccess: result => {
       if (!result.ok) return;
       queryClient.invalidateQueries({ queryKey: queryKeys.phase2Windows(baseUrl) });
@@ -59,45 +71,56 @@ export function WindowForm({ onSuccess }: { onSuccess: () => void }) {
         <Input id="label" required value={label} onChange={e => setLabel(e.target.value)} />
       </Field>
 
-      <Field label="Bouquet" htmlFor="ghaBouquetId">
+      <Field
+        label="Report type"
+        htmlFor="reportType"
+        hint={
+          serviceKey
+            ? `Fulfilment for this report type always uses ${ghaBouquetId}'s '${serviceKey}' service — never its other real services.`
+            : undefined
+        }
+      >
         <Select
-          id="ghaBouquetId"
-          required
+          id="reportType"
           value={ghaBouquetId}
           onChange={e => {
-            setGhaBouquetId(e.target.value);
-            setGhaDropId('');
+            const next = REPORT_TYPES.find(r => r.extBouquetId === e.target.value);
+            if (next) {
+              setReportType(next);
+              setGhaDropId('');
+            }
           }}
         >
-          <option value="" disabled>
-            Select a bouquet…
-          </option>
-          {(bouquets.data ?? []).map(b => (
-            <option key={b.ext_bouquet_id} value={b.ext_bouquet_id}>
-              {b.ext_bouquet_id} - {b.name}
+          {REPORT_TYPES.map(r => (
+            <option key={r.extBouquetId} value={r.extBouquetId}>
+              {r.label} ({r.extBouquetId})
             </option>
           ))}
         </Select>
       </Field>
 
       <Field
-        label="Past drop"
+        label={`${ghaBouquetId} — past drop`}
         htmlFor="ghaDropId"
         hint={
-          ghaBouquetId && !drops.isLoading && pastDrops.length === 0
-            ? 'This bouquet has no past (ended) drops yet.'
-            : 'Only drops that have already ended - a window can\'t reference one still running.'
+          !bouquets.isLoading && !bouquetExists
+            ? `${ghaBouquetId} hasn't been whitelisted in GHA yet - run the "MoMo Hour Phase 2 — Bouquet Setup" Postman folder (or create it from the Bouquets page) first.`
+            : serviceKey && !services.isLoading && !serviceExists
+              ? `'${serviceKey}' hasn't been whitelisted under ${ghaBouquetId} yet - run the "MoMo Hour Phase 2 — Bouquet Setup" Postman folder (request 0) first.`
+              : !drops.isLoading && pastDrops.length === 0
+                ? `${ghaBouquetId} has no past (ended) drops yet - it needs to run at least once.`
+                : "Only drops that have already ended - a window can't reference one still running."
         }
       >
         <Select
           id="ghaDropId"
           required
-          disabled={!ghaBouquetId}
+          disabled={pastDrops.length === 0}
           value={ghaDropId}
           onChange={e => setGhaDropId(e.target.value)}
         >
           <option value="" disabled>
-            {ghaBouquetId ? 'Select a past drop…' : 'Pick a bouquet first'}
+            {pastDrops.length > 0 ? 'Select a past drop…' : 'No past drops available'}
           </option>
           {pastDrops.map(d => (
             <option key={d.drop_id} value={d.drop_id}>
@@ -108,7 +131,11 @@ export function WindowForm({ onSuccess }: { onSuccess: () => void }) {
       </Field>
 
       <div className="flex justify-end">
-        <Button type="submit" loading={mutation.isPending} disabled={!ghaBouquetId || !ghaDropId}>
+        <Button
+          type="submit"
+          loading={mutation.isPending}
+          disabled={!ghaDropId || !bouquetExists || !serviceExists}
+        >
           Create window
         </Button>
       </div>
