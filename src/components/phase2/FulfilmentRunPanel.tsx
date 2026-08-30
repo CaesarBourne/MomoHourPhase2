@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,6 +13,7 @@ import { queryKeys } from '@/lib/query-keys';
 import * as api from '@/lib/api';
 import { firstApiError } from '@/lib/api';
 import { usePhase2FulfilmentRun } from '@/lib/queries';
+import type { ApiResult } from '@/lib/api';
 import type { Phase2FulfilmentRun } from '@/lib/types';
 
 const RUN_STATUS_TONE: Record<Phase2FulfilmentRun['status'], 'neutral' | 'warning' | 'success' | 'danger'> = {
@@ -25,12 +27,16 @@ const RUN_STATUS_TONE: Record<Phase2FulfilmentRun['status'], 'neutral' | 'warnin
 
 /**
  * Stage B run progress + control (docus/MOMO-HOUR-PHASE2.md §5.6). A run's
- * batches are processed one at a time, on purpose - "Process next batch" is
- * a deliberate admin action per sub-batch, not an automatic loop. Pause/
- * resume/stop only ever gate whether a FUTURE batch is allowed to start -
- * every record already processed committed its outcome (datalake status +
- * warehouse insert) the instant it finished, so nothing is ever at risk of
- * being lost or double-counted by pausing/stopping between batches.
+ * batches are still processed one at a time server-side — "Auto-process all
+ * batches" is a CLIENT-side loop that keeps calling "process next batch"
+ * for you, not a server-side background job. That's deliberate: every batch
+ * already commits its outcome (datalake status + warehouse insert) the
+ * instant it finishes, so stopping the loop — closing the tab, hitting
+ * "Stop auto-run" — never loses or double-counts anything; a later
+ * "Process next batch" (auto or manual) just continues from wherever it
+ * left off. "Pause"/"Stop" below are the separate SERVER-side controls —
+ * they mark the run itself, so they also block a concurrent auto-run
+ * elsewhere from continuing it.
  */
 export function FulfilmentRunPanel({
   windowId,
@@ -45,6 +51,9 @@ export function FulfilmentRunPanel({
   const { show } = useToast();
   const queryClient = useQueryClient();
   const { data: run, isLoading, isError, error } = usePhase2FulfilmentRun(runId);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const autoRunCancelled = useRef(false);
+  const [autoRunError, setAutoRunError] = useState<ReturnType<typeof firstApiError>>(undefined);
 
   const invalidateAfterChange = (updated: Phase2FulfilmentRun) => {
     queryClient.invalidateQueries({ queryKey: queryKeys.phase2FulfilmentRun(baseUrl, runId) });
@@ -66,6 +75,42 @@ export function FulfilmentRunPanel({
       });
     }
   });
+
+  const runAllBatches = async () => {
+    autoRunCancelled.current = false;
+    setAutoRunError(undefined);
+    setAutoRunning(true);
+    try {
+      for (;;) {
+        if (autoRunCancelled.current) break;
+        const result: ApiResult<Phase2FulfilmentRun> = await api.processNextFulfilmentBatch(
+          baseUrl,
+          runId
+        );
+        if (!result.ok) {
+          setAutoRunError(result);
+          break;
+        }
+        invalidateAfterChange(result.data);
+        const done = result.data.next_batch_number >= result.data.total_batches;
+        const halted = result.data.status === 'PAUSED' || result.data.status === 'STOPPED';
+        if (done || halted) {
+          show({
+            tone: done && result.data.status === 'COMPLETED' ? 'success' : 'info',
+            title: `Auto-run ${result.data.status.toLowerCase()}`,
+            description: `${result.data.succeeded_records} succeeded, ${result.data.failed_records} failed`
+          });
+          break;
+        }
+      }
+    } finally {
+      setAutoRunning(false);
+    }
+  };
+
+  const stopAutoRun = () => {
+    autoRunCancelled.current = true;
+  };
 
   const pauseRun = useMutation({
     mutationFn: () => api.pauseFulfilmentRun(baseUrl, runId),
@@ -105,7 +150,8 @@ export function FulfilmentRunPanel({
   };
 
   const isDone = run ? run.next_batch_number >= run.total_batches : false;
-  const anyError = firstApiError(processBatch.data, pauseRun.data, resumeRun.data, stopRun.data);
+  const anyError =
+    firstApiError(processBatch.data, pauseRun.data, resumeRun.data, stopRun.data) ?? autoRunError;
 
   return (
     <Card>
@@ -142,16 +188,30 @@ export function FulfilmentRunPanel({
                 </div>
               </div>
 
+              {autoRunning && (
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Auto-running — processing batch {run.next_batch_number + 1} of {run.total_batches}…
+                </div>
+              )}
+
               {canManage && !isDone && (
                 <div className="flex flex-wrap gap-2">
                   {run.status === 'PAUSED' ? (
                     <Button size="sm" loading={resumeRun.isPending} onClick={() => resumeRun.mutate()}>
                       Resume
                     </Button>
-                  ) : run.status === 'STOPPED' ? null : (
+                  ) : run.status === 'STOPPED' ? null : autoRunning ? (
+                    <Button variant="danger" size="sm" onClick={stopAutoRun}>
+                      Stop auto-run
+                    </Button>
+                  ) : (
                     <>
                       <Button size="sm" loading={processBatch.isPending} onClick={() => processBatch.mutate()}>
                         Process next batch
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={runAllBatches}>
+                        Auto-process all batches
                       </Button>
                       <Button
                         variant="secondary"

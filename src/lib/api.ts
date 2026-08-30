@@ -303,11 +303,18 @@ export function listDrops(
  * confirmed successful, actually credits the reward. Either rewardIds (one
  * or several specific rows) or dropId (every eligible row for that
  * drop/window) is required.
+ *
+ * Bounded to `batchCap` rows per call (default 100, server-side) -
+ * `hasMore: true` means the batch came back full and there may be more
+ * eligible rows left; call again to work through them, same "process next
+ * batch" shape as Phase 2's fulfilment runs.
  */
 export function checkAndFulfilRewards(
   baseUrl: string,
-  input: { rewardIds?: string[]; dropId?: string; serviceKey?: string }
-): Promise<ApiResult<{ rewardId: string; msisdn: string; outcome: string }[]>> {
+  input: { rewardIds?: string[]; dropId?: string; serviceKey?: string; batchCap?: number }
+): Promise<
+  ApiResult<{ results: { rewardId: string; msisdn: string; outcome: string }[]; hasMore: boolean }>
+> {
   return postJson(baseUrl, '/momo-hour/rewards/check-and-fulfil', input);
 }
 
