@@ -7,8 +7,6 @@ export interface Bouquet {
   category: string;
   reward_type: string;
   reward_value: string | null;
-  /** Npontu bundle-provisioning data code (e.g. "500MB-1D") for reward_type = 'data' - distinct from reward_value's display string. Only consumed by MoMo Hour Phase 2's fulfilment pipeline. */
-  npontu_data_bundle_code: string | null;
   match_ratio: string | number;
   cap_amount: string | number;
   start_date: string | null;
@@ -108,7 +106,6 @@ export interface UpsertBouquetInput {
   category: string;
   rewardType?: string;
   rewardValue?: string;
-  npontuDataBundleCode?: string;
   matchRatio?: number;
   capAmount?: number;
   startDate?: string;

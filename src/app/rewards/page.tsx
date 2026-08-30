@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -36,14 +36,30 @@ const OUTCOME_LABEL: Record<string, string> = {
   ERROR: 'error'
 };
 
-function summarizeOutcomes(results: { outcome: string }[]): string {
-  const counts = new Map<string, number>();
+function countOutcomes(results: { outcome: string }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
   for (const r of results) {
-    counts.set(r.outcome, (counts.get(r.outcome) ?? 0) + 1);
+    counts[r.outcome] = (counts[r.outcome] ?? 0) + 1;
   }
-  return Array.from(counts.entries())
+  return counts;
+}
+
+function formatOutcomeCounts(counts: Record<string, number>): string {
+  return Object.entries(counts)
     .map(([outcome, count]) => `${count} ${OUTCOME_LABEL[outcome] ?? outcome}`)
     .join(', ');
+}
+
+function summarizeOutcomes(results: { outcome: string }[]): string {
+  return formatOutcomeCounts(countOutcomes(results));
+}
+
+interface AutoRunProgress {
+  batches: number;
+  processed: number;
+  counts: Record<string, number>;
+  done: boolean;
+  stopped: boolean;
 }
 
 function RewardsPageInner() {
@@ -91,7 +107,11 @@ function RewardsPageInner() {
     onSuccess: result => {
       if (!result.ok) return;
       invalidateRewards();
-      show({ tone: 'info', title: 'Status checked', description: summarizeOutcomes(result.data) });
+      show({
+        tone: 'info',
+        title: 'Status checked',
+        description: summarizeOutcomes(result.data.results)
+      });
     }
   });
 
@@ -103,24 +123,70 @@ function RewardsPageInner() {
       setSelected(new Set());
       show({
         tone: 'info',
-        title: `Checked ${result.data.length} selected`,
-        description: summarizeOutcomes(result.data)
+        title: `Checked ${result.data.results.length} selected`,
+        description: summarizeOutcomes(result.data.results)
       });
     }
   });
 
-  const checkAllForDrop = useMutation({
-    mutationFn: () => api.checkAndFulfilRewards(baseUrl, { dropId: filters.dropId as string }),
-    onSuccess: result => {
-      if (!result.ok) return;
-      invalidateRewards();
-      show({
-        tone: 'info',
-        title: `Checked ${result.data.length} billpayment PENDING_MANUAL row(s) for this drop`,
-        description: result.data.length ? summarizeOutcomes(result.data) : undefined
-      });
+  // Client-side auto-loop: keeps calling checkAndFulfilRewards({ dropId })
+  // — one bounded batch (server-capped, currently 100) at a time — until
+  // the server says hasMore is false. Deliberately client-driven rather
+  // than a server-side background job: every batch is already self-healing
+  // (atomic per-row claim + resumable via PENDING/PENDING_MANUAL), so
+  // stopping this loop — closing the tab, hitting Stop — never loses or
+  // duplicates anything; the next run just picks up wherever this one left
+  // off. See the "server-side vs client-side looping" discussion this UI
+  // grew out of.
+  const [autoRun, setAutoRun] = useState<AutoRunProgress | null>(null);
+  const autoRunCancelled = useRef(false);
+  const [autoRunError, setAutoRunError] = useState<{ kind: 'network' | 'business'; message: string } | null>(
+    null
+  );
+
+  const runAllForDrop = async () => {
+    if (
+      !window.confirm(
+        'Check & fulfil every billpayment PENDING_MANUAL row for this drop, up to 100 at a time until done? You can stop it at any point without losing progress.'
+      )
+    ) {
+      return;
     }
-  });
+    autoRunCancelled.current = false;
+    setAutoRunError(null);
+    setAutoRun({ batches: 0, processed: 0, counts: {}, done: false, stopped: false });
+
+    let hasMore = true;
+    while (hasMore && !autoRunCancelled.current) {
+      const result = await api.checkAndFulfilRewards(baseUrl, { dropId: filters.dropId as string });
+      if (!result.ok) {
+        setAutoRunError(result);
+        setAutoRun(prev => (prev ? { ...prev, done: true } : prev));
+        return;
+      }
+      invalidateRewards();
+      setAutoRun(prev => {
+        const counts = { ...(prev?.counts ?? {}) };
+        for (const [outcome, count] of Object.entries(countOutcomes(result.data.results))) {
+          counts[outcome] = (counts[outcome] ?? 0) + count;
+        }
+        return {
+          batches: (prev?.batches ?? 0) + 1,
+          processed: (prev?.processed ?? 0) + result.data.results.length,
+          counts,
+          done: false,
+          stopped: false
+        };
+      });
+      hasMore = result.data.hasMore;
+    }
+
+    setAutoRun(prev => (prev ? { ...prev, done: true, stopped: autoRunCancelled.current } : prev));
+  };
+
+  const stopAutoRun = () => {
+    autoRunCancelled.current = true;
+  };
 
   const toggleSelected = (id: string) => {
     setSelected(prev => {
@@ -131,7 +197,7 @@ function RewardsPageInner() {
     });
   };
 
-  const bulkError = api.firstApiError(checkOne.data, checkSelected.data, checkAllForDrop.data);
+  const bulkError = api.firstApiError(checkOne.data, checkSelected.data) ?? autoRunError;
 
   // Deep link from the Bouquets page ("View rewards" on a bouquet card) -
   // pre-fill and immediately apply the bouquet filter on load.
@@ -305,22 +371,37 @@ function RewardsPageInner() {
           >
             Check &amp; fulfil selected ({selected.size})
           </Button>
-          {filters.dropId && (
-            <Button
-              size="sm"
-              loading={checkAllForDrop.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Check & fulfil every billpayment PENDING_MANUAL row for this drop? This may take a while for a large drop.'
-                  )
-                ) {
-                  checkAllForDrop.mutate();
-                }
-              }}
-            >
-              Check &amp; fulfil all billpayment for this drop
-            </Button>
+          {filters.dropId &&
+            (autoRun && !autoRun.done ? (
+              <Button variant="danger" size="sm" onClick={stopAutoRun}>
+                Stop
+              </Button>
+            ) : (
+              <Button size="sm" onClick={runAllForDrop}>
+                Check &amp; fulfil all billpayment for this drop
+              </Button>
+            ))}
+        </Card>
+      )}
+
+      {autoRun && (
+        <Card className="mb-4 p-3">
+          <div className="flex items-center gap-3">
+            {!autoRun.done && (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            )}
+            <p className="text-sm text-slate-700 dark:text-slate-300">
+              {autoRun.done
+                ? autoRun.stopped
+                  ? `Stopped after ${autoRun.batches} batch(es), ${autoRun.processed} row(s) processed.`
+                  : `Done — ${autoRun.batches} batch(es), ${autoRun.processed} row(s) processed.`
+                : `Batch ${autoRun.batches + 1} in progress — ${autoRun.processed} row(s) processed so far…`}
+            </p>
+          </div>
+          {autoRun.processed > 0 && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {formatOutcomeCounts(autoRun.counts)}
+            </p>
           )}
         </Card>
       )}
