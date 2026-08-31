@@ -26,10 +26,10 @@ export const queryKeys = {
 
   // MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md)
   phase2Windows: (baseUrl: string) => ['phase2-windows', baseUrl] as const,
-  phase2Datalake: (baseUrl: string, windowId: string, processingStatus?: string) =>
-    ['phase2-datalake', baseUrl, windowId, processingStatus ?? null] as const,
+  phase2Datalake: (baseUrl: string, windowId: string, processingStatus?: string, page = 1) =>
+    ['phase2-datalake', baseUrl, windowId, processingStatus ?? null, page] as const,
   phase2FulfilmentRun: (baseUrl: string, runId: string) =>
     ['phase2-fulfilment-run', baseUrl, runId] as const,
-  phase2PendingRewards: (baseUrl: string, windowId: string) =>
-    ['phase2-pending-rewards', baseUrl, windowId] as const
+  phase2PendingRewards: (baseUrl: string, windowId: string, page = 1) =>
+    ['phase2-pending-rewards', baseUrl, windowId, page] as const
 };

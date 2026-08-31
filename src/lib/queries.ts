@@ -105,18 +105,15 @@ export function usePhase2Windows() {
   });
 }
 
-/** Cursor-paginated - call fetchNextPage() for "Load more" (docus/MOMO-HOUR-PHASE2.md's datalake can run into the thousands, e.g. Jumo Loans' ~9,000 rows). */
-export function usePhase2Datalake(windowId: string, processingStatus?: string) {
+/** Page-number pagination - pass the 1-based page to fetch; re-fetches that exact page when it changes. */
+export function usePhase2Datalake(windowId: string, processingStatus?: string, page = 1) {
   const { baseUrl } = useBaseUrl();
-  return useInfiniteQuery({
-    queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus),
-    queryFn: async ({ pageParam }) =>
-      unwrapOrThrow(
-        await api.listDatalake(baseUrl, windowId, { processingStatus, cursor: pageParam })
-      ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
-    enabled: !!windowId
+  return useQuery({
+    queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus, page),
+    queryFn: async () =>
+      unwrapOrThrow(await api.listDatalake(baseUrl, windowId, { processingStatus, page })),
+    enabled: !!windowId,
+    placeholderData: previous => previous // keep showing the old page while the next one loads, no flash-to-empty
   });
 }
 
@@ -132,14 +129,12 @@ export function usePhase2FulfilmentRun(runId: string | null) {
   });
 }
 
-export function usePhase2PendingRewards(windowId: string) {
+export function usePhase2PendingRewards(windowId: string, page = 1) {
   const { baseUrl } = useBaseUrl();
-  return useInfiniteQuery({
-    queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId),
-    queryFn: async ({ pageParam }) =>
-      unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId, { cursor: pageParam })),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
-    enabled: !!windowId
+  return useQuery({
+    queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId, page),
+    queryFn: async () => unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId, { page })),
+    enabled: !!windowId,
+    placeholderData: previous => previous
   });
 }

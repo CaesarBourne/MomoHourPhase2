@@ -298,9 +298,13 @@ export interface Phase2FulfilmentRun {
 }
 
 /** Cursor (keyset) page - same shape as ListRewardsResult. */
+/** Page-number (offset) pagination - numbered pager, not infinite-scroll "Load more". */
 export interface Phase2Page<T> {
   data: T[];
-  nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface Phase2PendingReward {

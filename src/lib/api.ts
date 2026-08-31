@@ -448,7 +448,7 @@ export function getPhase2Upload(baseUrl: string, uploadId: string): Promise<ApiR
 export function listDatalake(
   baseUrl: string,
   windowId: string,
-  filters: { processingStatus?: string; limit?: number; cursor?: string } = {}
+  filters: { processingStatus?: string; page?: number; pageSize?: number } = {}
 ): Promise<ApiResult<Phase2Page<Phase2DatalakeRow>>> {
   return postJson(baseUrl, '/momo-hour-phase2/datalake/list', { windowId, ...filters });
 }
@@ -510,7 +510,7 @@ export function getFulfilmentRun(
 export function listPendingRewards(
   baseUrl: string,
   windowId: string,
-  filters: { limit?: number; cursor?: string } = {}
+  filters: { page?: number; pageSize?: number } = {}
 ): Promise<ApiResult<Phase2Page<Phase2PendingReward>>> {
   return postJson(baseUrl, '/momo-hour-phase2/pending-rewards/list', { windowId, ...filters });
 }
