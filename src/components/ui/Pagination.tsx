@@ -2,7 +2,9 @@ import { Button } from './Button';
 
 /** Which page numbers to show as clickable buttons - first, last, current
  * ± 1, with `null` gaps collapsed to an ellipsis, so a 200-page result
- * doesn't render 200 buttons. */
+ * doesn't render 200 buttons. 
+ * ± 1, with `null` gaps collapsed to an ellipsis, so a page-heavy result
+ * doesn't render hundreds of buttons. */
 function pageWindow(current: number, total: number): (number | null)[] {
   const pages = new Set<number>([1, total, current, current - 1, current + 1]);
   const sorted = Array.from(pages)
@@ -24,6 +26,8 @@ function pageWindow(current: number, total: number): (number | null)[] {
  * infinite-scroll "Load more". Backed by GHA's page/pageSize/total/
  * totalPages response shape (docus/MOMO-HOUR-PHASE2.md's datalake/data
  * warehouse listings).
+ * totalPages response shape (see useRewardsPaged / momo-hour.service.ts's
+ * listRewards page-number mode).
  */
 export function Pagination({
   page,

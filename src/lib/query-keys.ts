@@ -9,8 +9,7 @@ export const queryKeys = {
   currentActiveDrop: (baseUrl: string) => ['current-active-drop', baseUrl] as const,
   drops: (baseUrl: string, extBouquetId?: string) =>
     ['drops', baseUrl, extBouquetId ?? null] as const,
-  active: (baseUrl: string, extBouquetId: string) =>
-    ['active', baseUrl, extBouquetId] as const,
+  active: (baseUrl: string, extBouquetId: string) => ['active', baseUrl, extBouquetId] as const,
   rewards: (baseUrl: string, filters: ListRewardsInput = {}) =>
     [
       'rewards',
@@ -21,6 +20,19 @@ export const queryKeys = {
       filters.serviceKey ?? null,
       filters.fulfilmentStatus ?? null,
       filters.limit ?? null
+    ] as const,
+  /** Page-number mode (see useRewardsPaged) — separate key from `rewards`
+   * above (cursor/infinite mode) since it includes `page`. */
+  rewardsPaged: (baseUrl: string, filters: ListRewardsInput = {}, page = 1) =>
+    [
+      'rewards-paged',
+      baseUrl,
+      filters.msisdn ?? null,
+      filters.extBouquetId ?? null,
+      filters.dropId ?? null,
+      filters.serviceKey ?? null,
+      filters.fulfilmentStatus ?? null,
+      page
     ] as const,
   admins: (baseUrl: string) => ['admins', baseUrl] as const,
 
