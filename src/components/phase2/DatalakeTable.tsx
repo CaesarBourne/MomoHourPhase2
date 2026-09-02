@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { QueryState } from '@/components/ui/QueryState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { Pagination } from '@/components/ui/Pagination';
 import { useBaseUrl } from '@/lib/base-url';
 import { useToast } from '@/providers/ToastProvider';
 import { queryKeys } from '@/lib/query-keys';
@@ -27,13 +28,17 @@ const ELIGIBLE_STATUSES: Phase2DatalakeRow['processing_status'][] = ['UNPROCESSE
 
 /**
  * Datalake browse + Stage B trigger (docus/MOMO-HOUR-PHASE2.md §5.5/§5.6).
+ * Numbered page-by-page browsing (Pagination), not infinite-scroll "Load
+ * more" - a window's datalake is bounded to one uploaded file's size, so a
+ * plain indexed page/pageSize query stays fast at this scale (see
+ * MomoHourPhase2Service.listDatalake's doc comment for why this differs
+ * from the cursor pagination momo_hour_reward_history uses elsewhere).
  *
  * Deliberately only ONE way to start a run from a checkbox selection - a
  * SEPARATE, explicitly-confirmed "Run ALL eligible in window" action exists
- * for when the intent really is every row (pagination means checkboxes can
- * only ever cover what's currently loaded on screen). Two side-by-side
- * "selected" vs "all" buttons previously made it easy to fire the wrong one
- * by mistake.
+ * for when the intent really is every row (checkboxes can only ever cover
+ * what's on the CURRENT page). Two side-by-side "selected" vs "all" buttons
+ * previously made it easy to fire the wrong one by mistake.
  */
 export function DatalakeTable({
   windowId,
@@ -47,23 +52,18 @@ export function DatalakeTable({
   const { baseUrl } = useBaseUrl();
   const { show } = useToast();
   const queryClient = useQueryClient();
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = usePhase2Datalake(windowId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, error, refetch, isFetching } = usePhase2Datalake(
+    windowId,
+    undefined,
+    page
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const rows = data?.pages.flatMap(page => page.data) ?? [];
-  const loadedEligibleRows = rows.filter(r => ELIGIBLE_STATUSES.includes(r.processing_status));
-  const allLoadedEligibleSelected =
-    loadedEligibleRows.length > 0 && loadedEligibleRows.every(r => selected.has(r.id));
+  const rows = data?.data ?? [];
+  const eligibleRowsOnPage = rows.filter(r => ELIGIBLE_STATUSES.includes(r.processing_status));
+  const allOnPageSelected =
+    eligibleRowsOnPage.length > 0 && eligibleRowsOnPage.every(r => selected.has(r.id));
 
   const invalidateDatalake = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.phase2Datalake(baseUrl, windowId) });
@@ -77,14 +77,14 @@ export function DatalakeTable({
     });
   };
 
-  const toggleSelectAllLoaded = () => {
+  const toggleSelectAllOnPage = () => {
     setSelected(prev => {
-      if (allLoadedEligibleSelected) {
+      if (allOnPageSelected) {
         const next = new Set(prev);
-        loadedEligibleRows.forEach(r => next.delete(r.id));
+        eligibleRowsOnPage.forEach(r => next.delete(r.id));
         return next;
       }
-      return new Set([...prev, ...loadedEligibleRows.map(r => r.id)]);
+      return new Set([...prev, ...eligibleRowsOnPage.map(r => r.id)]);
     });
   };
 
@@ -125,7 +125,7 @@ export function DatalakeTable({
   const handleRunAllEligible = () => {
     if (
       window.confirm(
-        'This runs EVERY unprocessed/failed record in this window, not just what\'s loaded on screen. Continue?'
+        'This runs EVERY unprocessed/failed record in this window, not just this page. Continue?'
       )
     ) {
       startAllRun.mutate();
@@ -158,7 +158,7 @@ export function DatalakeTable({
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {loadedEligibleRows.length} of {rows.length} loaded row(s) eligible for fulfilment
+          {eligibleRowsOnPage.length} of {rows.length} row(s) on this page eligible for fulfilment
         </p>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => refetch()} loading={isFetching}>
@@ -203,12 +203,12 @@ export function DatalakeTable({
             <Table>
               <Thead>
                 <Th>
-                  {canManage && loadedEligibleRows.length > 0 && (
+                  {canManage && eligibleRowsOnPage.length > 0 && (
                     <input
                       type="checkbox"
-                      checked={allLoadedEligibleSelected}
-                      onChange={toggleSelectAllLoaded}
-                      aria-label="Select all loaded eligible rows"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAllOnPage}
+                      aria-label="Select all eligible rows on this page"
                     />
                   )}
                 </Th>
@@ -245,17 +245,14 @@ export function DatalakeTable({
               </Tbody>
             </Table>
 
-            {hasNextPage && (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={isFetchingNextPage}
-                  onClick={() => fetchNextPage()}
-                >
-                  Load more
-                </Button>
-              </div>
+            {data && (
+              <Pagination
+                page={data.page}
+                totalPages={data.totalPages}
+                total={data.total}
+                onPageChange={setPage}
+                isLoading={isFetching}
+              />
             )}
           </>
         )}

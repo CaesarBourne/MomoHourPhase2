@@ -134,12 +134,24 @@ export interface ListRewardsInput {
   limit?: number;
   /** Opaque cursor from a previous page's `nextCursor` — omit for page one. */
   cursor?: string;
+  /**
+   * Switches to page-number (offset) pagination instead of cursor mode —
+   * only valid when `dropId` or `extBouquetId` is also set (GHA rejects it
+   * otherwise). 1-based.
+   */
+  page?: number;
+  pageSize?: number;
 }
 
 export interface ListRewardsResult {
   data: RewardHistory[];
   /** Pass back as `cursor` to fetch the next page; `null` = no more rows. */
   nextCursor: string | null;
+  /** Only present when `page` was passed in the request (page-number mode). */
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
 }
 
 export interface CreateScheduleInput {
@@ -298,9 +310,13 @@ export interface Phase2FulfilmentRun {
 }
 
 /** Cursor (keyset) page - same shape as ListRewardsResult. */
+/** Page-number (offset) pagination - numbered pager, not infinite-scroll "Load more". */
 export interface Phase2Page<T> {
   data: T[];
-  nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface Phase2PendingReward {

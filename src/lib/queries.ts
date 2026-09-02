@@ -74,7 +74,7 @@ export function useDrops(extBouquetId?: string) {
  * page by page (see GHA/src/momo-hour/momo-hour.service.ts::listRewards)
  * rather than requesting deeper and deeper offsets.
  */
-export function useRewards(filters: ListRewardsInput = {}) {
+export function useRewards(filters: ListRewardsInput = {}, enabled = true) {
   const { baseUrl } = useBaseUrl();
   return useInfiniteQuery({
     queryKey: queryKeys.rewards(baseUrl, filters),
@@ -83,7 +83,31 @@ export function useRewards(filters: ListRewardsInput = {}) {
         await api.listRewards(baseUrl, pageParam ? { ...filters, cursor: pageParam } : filters)
       ),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined
+    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
+    enabled
+  });
+}
+
+/**
+ * Page-number (offset) mode — only valid when `filters.dropId` or
+ * `filters.extBouquetId` is set (GHA rejects it otherwise, see
+ * GHA/src/momo-hour/momo-hour.service.ts::listRewards's doc comment for
+ * why unscoped offset pagination over reward history isn't allowed). Pass
+ * the 1-based page to fetch; re-fetches that exact page when it changes.
+ * Separate hook from `useRewards` above (cursor/infinite mode) rather than
+ * one hook with a mode flag, so each stays a plain, unconditional call to
+ * its own React Query primitive (`useQuery` vs `useInfiniteQuery`) — those
+ * can't be switched between conditionally on the same hook call without
+ * violating the rules of hooks.
+ */
+export function useRewardsPaged(filters: ListRewardsInput = {}, page = 1) {
+  const { baseUrl } = useBaseUrl();
+  const enabled = Boolean(filters.dropId || filters.extBouquetId);
+  return useQuery({
+    queryKey: queryKeys.rewardsPaged(baseUrl, filters, page),
+    queryFn: async () => unwrapOrThrow(await api.listRewards(baseUrl, { ...filters, page })),
+    enabled,
+    placeholderData: previous => previous
   });
 }
 
@@ -105,18 +129,15 @@ export function usePhase2Windows() {
   });
 }
 
-/** Cursor-paginated - call fetchNextPage() for "Load more" (docus/MOMO-HOUR-PHASE2.md's datalake can run into the thousands, e.g. Jumo Loans' ~9,000 rows). */
-export function usePhase2Datalake(windowId: string, processingStatus?: string) {
+/** Page-number pagination - pass the 1-based page to fetch; re-fetches that exact page when it changes. */
+export function usePhase2Datalake(windowId: string, processingStatus?: string, page = 1) {
   const { baseUrl } = useBaseUrl();
-  return useInfiniteQuery({
-    queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus),
-    queryFn: async ({ pageParam }) =>
-      unwrapOrThrow(
-        await api.listDatalake(baseUrl, windowId, { processingStatus, cursor: pageParam })
-      ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
-    enabled: !!windowId
+  return useQuery({
+    queryKey: queryKeys.phase2Datalake(baseUrl, windowId, processingStatus, page),
+    queryFn: async () =>
+      unwrapOrThrow(await api.listDatalake(baseUrl, windowId, { processingStatus, page })),
+    enabled: !!windowId,
+    placeholderData: previous => previous // keep showing the old page while the next one loads, no flash-to-empty
   });
 }
 
@@ -132,14 +153,12 @@ export function usePhase2FulfilmentRun(runId: string | null) {
   });
 }
 
-export function usePhase2PendingRewards(windowId: string) {
+export function usePhase2PendingRewards(windowId: string, page = 1) {
   const { baseUrl } = useBaseUrl();
-  return useInfiniteQuery({
-    queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId),
-    queryFn: async ({ pageParam }) =>
-      unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId, { cursor: pageParam })),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: lastPage => lastPage.nextCursor ?? undefined,
-    enabled: !!windowId
+  return useQuery({
+    queryKey: queryKeys.phase2PendingRewards(baseUrl, windowId, page),
+    queryFn: async () => unwrapOrThrow(await api.listPendingRewards(baseUrl, windowId, { page })),
+    enabled: !!windowId,
+    placeholderData: previous => previous
   });
 }

@@ -13,7 +13,8 @@ import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { RefreshButton } from '@/components/ui/RefreshButton';
 import { ExportCsvButton } from '@/components/ui/ExportCsvButton';
 import { RewardsTable, isCheckableReward } from '@/components/rewards/RewardsTable';
-import { useBouquets, useDrops, useRewards } from '@/lib/queries';
+import { Pagination } from '@/components/ui/Pagination';
+import { useBouquets, useDrops, useRewards, useRewardsPaged } from '@/lib/queries';
 import { useAuth } from '@/lib/auth';
 import { useBaseUrl } from '@/lib/base-url';
 import { useToast } from '@/providers/ToastProvider';
@@ -81,26 +82,33 @@ function RewardsPageInner() {
     fulfilmentStatus: ''
   });
   const [filters, setFilters] = useState<ListRewardsInput>(EMPTY_FILTERS);
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = useRewards(filters);
-  // Cursor pagination, 200 at a time (GHA/src/momo-hour/momo-hour.service.ts)
-  // — flatten whatever pages have been loaded so far into one list for the
-  // table/export. A drop can carry hundreds of thousands of rows in
-  // production, so nothing here ever tries to load "everything" at once.
-  const rows = data?.pages.flatMap(page => page.data) ?? [];
+  const [page, setPage] = useState(1);
+
+  // Scoped to a single drop or bouquet -> numbered pages with a real total
+  // (GHA can serve that fast there, see useRewardsPaged). Unscoped -> the
+  // existing cursor/"Load more" flow, unchanged, since offset pagination
+  // over the WHOLE reward history table doesn't stay fast at production
+  // scale (500K+ rows).
+  const isPagedMode = Boolean(filters.dropId || filters.extBouquetId);
+
+  const cursorQuery = useRewards(filters, !isPagedMode);
+  const pagedQuery = useRewardsPaged(filters, page);
+
+  // Cursor pagination, 200 at a time — flatten whatever pages have been
+  // loaded so far into one list for the table/export.
+  const cursorRows = cursorQuery.data?.pages.flatMap(p => p.data) ?? [];
+  const rows = isPagedMode ? (pagedQuery.data?.data ?? []) : cursorRows;
   const checkableRows = rows.filter(isCheckableReward);
 
-  const invalidateRewards = () =>
+  const isLoading = isPagedMode ? pagedQuery.isLoading : cursorQuery.isLoading;
+  const isError = isPagedMode ? pagedQuery.isError : cursorQuery.isError;
+  const error = isPagedMode ? pagedQuery.error : cursorQuery.error;
+  const isFetching = isPagedMode ? pagedQuery.isFetching : cursorQuery.isFetching;
+
+  const invalidateRewards = () => {
     queryClient.invalidateQueries({ queryKey: ['rewards'], exact: false });
+    queryClient.invalidateQueries({ queryKey: ['rewards-paged'], exact: false });
+  };
 
   const checkOne = useMutation({
     mutationFn: (reward: RewardHistory) => api.checkAndFulfilRewards(baseUrl, { rewardIds: [reward.id] }),
@@ -219,6 +227,7 @@ function RewardsPageInner() {
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
+    setPage(1);
     setFilters({
       msisdn: form.msisdn.trim() || undefined,
       extBouquetId: form.extBouquetId || undefined,
@@ -230,12 +239,14 @@ function RewardsPageInner() {
 
   const clearSearch = () => {
     setForm({ msisdn: '', extBouquetId: '', dropId: '', serviceKey: '', fulfilmentStatus: '' });
+    setPage(1);
     setFilters(EMPTY_FILTERS);
   };
 
   const selectDrop = (dropId: string) => {
     const drop = drops.data?.find(d => d.drop_id === dropId);
     setForm(f => ({ ...f, dropId, extBouquetId: drop?.ext_bouquet_id ?? f.extBouquetId }));
+    setPage(1);
     setFilters(f => ({ ...f, dropId, extBouquetId: drop?.ext_bouquet_id ?? f.extBouquetId }));
   };
 
@@ -257,26 +268,35 @@ function RewardsPageInner() {
     ]);
   };
 
+  const headerDescription = isPagedMode
+    ? 'Filtered reward history, one bouquet/drop at a time - paginated, with a total count.'
+    : (hasFilters
+        ? 'Filtered reward history - e.g. every FAILED or PENDING_MANUAL row for one specific drop is the retry/bulk-fulfilment export list.'
+        : 'Rewards granted across all customers and drops, 200 at a time.') +
+      (rows.length > 0 ? ` Loaded ${rows.length.toLocaleString()} so far.` : '');
+
   return (
     <div>
       <PageHeader
         title="Rewards"
-        description={
-          (hasFilters
-            ? 'Filtered reward history - e.g. every FAILED or PENDING_MANUAL row for one specific drop is the retry/bulk-fulfilment export list.'
-            : 'Rewards granted across all customers and drops, 200 at a time.') +
-          (rows.length > 0 ? ` Loaded ${rows.length.toLocaleString()} so far.` : '')
-        }
+        description={headerDescription}
         action={
           <div className="flex items-center gap-2">
             {canExport && (
               <ExportCsvButton
                 onExport={handleExport}
                 disabled={rows.length === 0}
-                title="Exports only what's currently loaded below - use Load more first for a bigger export"
+                title={
+                  isPagedMode
+                    ? 'Exports only the current page - use the page numbers below for more'
+                    : "Exports only what's currently loaded below - use Load more first for a bigger export"
+                }
               />
             )}
-            <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
+            <RefreshButton
+              onRefresh={() => (isPagedMode ? pagedQuery.refetch() : cursorQuery.refetch())}
+              isRefreshing={isFetching}
+            />
           </div>
         }
       />
@@ -426,18 +446,28 @@ function RewardsPageInner() {
               onCheckStatus={canTrigger ? reward => checkOne.mutate(reward) : undefined}
               checkingRewardId={checkOne.isPending ? checkOne.variables?.id : null}
             />
-            {hasNextPage && (
-              <div className="flex justify-center border-t border-slate-100 p-3 dark:border-slate-800">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={isFetchingNextPage}
-                  onClick={() => fetchNextPage()}
-                >
-                  Load more
-                </Button>
-              </div>
-            )}
+            {isPagedMode
+              ? pagedQuery.data && (
+                  <Pagination
+                    page={pagedQuery.data.page ?? 1}
+                    totalPages={pagedQuery.data.totalPages ?? 1}
+                    total={pagedQuery.data.total ?? rows.length}
+                    onPageChange={setPage}
+                    isLoading={pagedQuery.isFetching}
+                  />
+                )
+              : cursorQuery.hasNextPage && (
+                  <div className="flex justify-center border-t border-slate-100 p-3 dark:border-slate-800">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={cursorQuery.isFetchingNextPage}
+                      onClick={() => cursorQuery.fetchNextPage()}
+                    >
+                      Load more
+                    </Button>
+                  </div>
+                )}
           </Card>
         )}
       </QueryState>

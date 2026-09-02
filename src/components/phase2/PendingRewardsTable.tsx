@@ -1,11 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { Table, Thead, Th, Tbody, Tr, Td } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { QueryState } from '@/components/ui/QueryState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RefreshButton } from '@/components/ui/RefreshButton';
+import { Pagination } from '@/components/ui/Pagination';
 import { usePhase2PendingRewards } from '@/lib/queries';
 
 /**
@@ -13,26 +14,24 @@ import { usePhase2PendingRewards } from '@/lib/queries';
  * by a successful fulfilment run, entirely separate from GHA/ECW's own
  * momo_hour_reward_history. Read-only and never deletable from here (unlike
  * the datalake) - it's the permanent record of what was actually fulfilled.
+ *
+ * Numbered page-by-page browsing (Pagination), not infinite-scroll "Load
+ * more" - see DatalakeTable's doc comment for why offset pagination is safe
+ * here (bounded per-window, unlike momo_hour_reward_history elsewhere).
  */
 export function PendingRewardsTable({ windowId }: { windowId: string }) {
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = usePhase2PendingRewards(windowId);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, error, refetch, isFetching } = usePhase2PendingRewards(
+    windowId,
+    page
+  );
 
-  const rows = data?.pages.flatMap(page => page.data) ?? [];
+  const rows = data?.data ?? [];
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{rows.length} row(s) loaded</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{rows.length} row(s) on this page</p>
         <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
       </div>
       <QueryState isLoading={isLoading} isError={isError} error={error}>
@@ -66,17 +65,14 @@ export function PendingRewardsTable({ windowId }: { windowId: string }) {
               </Tbody>
             </Table>
 
-            {hasNextPage && (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={isFetchingNextPage}
-                  onClick={() => fetchNextPage()}
-                >
-                  Load more
-                </Button>
-              </div>
+            {data && (
+              <Pagination
+                page={data.page}
+                totalPages={data.totalPages}
+                total={data.total}
+                onPageChange={setPage}
+                isLoading={isFetching}
+              />
             )}
           </>
         )}

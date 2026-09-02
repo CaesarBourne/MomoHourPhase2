@@ -9,8 +9,7 @@ export const queryKeys = {
   currentActiveDrop: (baseUrl: string) => ['current-active-drop', baseUrl] as const,
   drops: (baseUrl: string, extBouquetId?: string) =>
     ['drops', baseUrl, extBouquetId ?? null] as const,
-  active: (baseUrl: string, extBouquetId: string) =>
-    ['active', baseUrl, extBouquetId] as const,
+  active: (baseUrl: string, extBouquetId: string) => ['active', baseUrl, extBouquetId] as const,
   rewards: (baseUrl: string, filters: ListRewardsInput = {}) =>
     [
       'rewards',
@@ -22,14 +21,27 @@ export const queryKeys = {
       filters.fulfilmentStatus ?? null,
       filters.limit ?? null
     ] as const,
+  /** Page-number mode (see useRewardsPaged) — separate key from `rewards`
+   * above (cursor/infinite mode) since it includes `page`. */
+  rewardsPaged: (baseUrl: string, filters: ListRewardsInput = {}, page = 1) =>
+    [
+      'rewards-paged',
+      baseUrl,
+      filters.msisdn ?? null,
+      filters.extBouquetId ?? null,
+      filters.dropId ?? null,
+      filters.serviceKey ?? null,
+      filters.fulfilmentStatus ?? null,
+      page
+    ] as const,
   admins: (baseUrl: string) => ['admins', baseUrl] as const,
 
   // MoMo Hour Phase 2 (docus/MOMO-HOUR-PHASE2.md)
   phase2Windows: (baseUrl: string) => ['phase2-windows', baseUrl] as const,
-  phase2Datalake: (baseUrl: string, windowId: string, processingStatus?: string) =>
-    ['phase2-datalake', baseUrl, windowId, processingStatus ?? null] as const,
+  phase2Datalake: (baseUrl: string, windowId: string, processingStatus?: string, page = 1) =>
+    ['phase2-datalake', baseUrl, windowId, processingStatus ?? null, page] as const,
   phase2FulfilmentRun: (baseUrl: string, runId: string) =>
     ['phase2-fulfilment-run', baseUrl, runId] as const,
-  phase2PendingRewards: (baseUrl: string, windowId: string) =>
-    ['phase2-pending-rewards', baseUrl, windowId] as const
+  phase2PendingRewards: (baseUrl: string, windowId: string, page = 1) =>
+    ['phase2-pending-rewards', baseUrl, windowId, page] as const
 };
