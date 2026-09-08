@@ -7,11 +7,13 @@ import { Button } from './Button';
 export function ExportCsvButton({
   onExport,
   disabled,
+  loading,
   className = '',
   title
 }: {
   onExport: () => void;
   disabled?: boolean;
+  loading?: boolean;
   className?: string;
   title?: string;
 }) {
@@ -21,6 +23,7 @@ export function ExportCsvButton({
       variant="secondary"
       size="sm"
       disabled={disabled}
+      loading={loading}
       onClick={onExport}
       className={className}
       title={title}
