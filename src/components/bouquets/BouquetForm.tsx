@@ -150,16 +150,6 @@ export function BouquetForm({
         </Field>
       </div>
 
-      {form.rewardType === 'data' && (
-        <p className="rounded-md border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          The real Npontu bundle-provisioning code for this bouquet is not set here — it&apos;s
-          fixed via an env var (e.g. <code>MOMO_HOUR_NPONTU_DATA_BUNDLE_CODE_{'{'}extBouquetId{'}'}</code>
-          , see <code>ECW/src/momoHour/dispatcher.js</code>), deliberately not editable from this
-          portal since a bundle code has a direct real-money cost each time it&apos;s provisioned.
-          Ask engineering to add/change it via a deploy.
-        </p>
-      )}
-
       <div className="grid grid-cols-2 gap-4">
         <Field label="Match ratio" htmlFor="matchRatio" hint="1 = 1:1 cashback">
           <Input
