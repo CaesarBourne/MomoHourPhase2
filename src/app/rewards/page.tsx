@@ -73,6 +73,7 @@ function RewardsPageInner() {
   const canExport = hasPermission('rewards:export');
   const canTrigger = hasPermission('rewards:trigger');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isExportingAll, setIsExportingAll] = useState(false);
 
   const [form, setForm] = useState({
     msisdn: '',
@@ -111,7 +112,8 @@ function RewardsPageInner() {
   };
 
   const checkOne = useMutation({
-    mutationFn: (reward: RewardHistory) => api.checkAndFulfilRewards(baseUrl, { rewardIds: [reward.id] }),
+    mutationFn: (reward: RewardHistory) =>
+      api.checkAndFulfilRewards(baseUrl, { rewardIds: [reward.id] }),
     onSuccess: result => {
       if (!result.ok) return;
       invalidateRewards();
@@ -148,9 +150,10 @@ function RewardsPageInner() {
   // grew out of.
   const [autoRun, setAutoRun] = useState<AutoRunProgress | null>(null);
   const autoRunCancelled = useRef(false);
-  const [autoRunError, setAutoRunError] = useState<{ kind: 'network' | 'business'; message: string } | null>(
-    null
-  );
+  const [autoRunError, setAutoRunError] = useState<{
+    kind: 'network' | 'business';
+    message: string;
+  } | null>(null);
 
   const runAllForDrop = async () => {
     if (
@@ -250,22 +253,101 @@ function RewardsPageInner() {
     setFilters(f => ({ ...f, dropId, extBouquetId: drop?.ext_bouquet_id ?? f.extBouquetId }));
   };
 
-  const handleExport = () => {
+  const REWARDS_CSV_COLUMNS: { header: string; value: (r: RewardHistory) => string }[] = [
+    { header: 'MSISDN', value: r => r.msisdn },
+    { header: 'Bouquet', value: r => r.ext_bouquet_id },
+    { header: 'Drop ID', value: r => r.drop_id },
+    { header: 'Service', value: r => r.service_key ?? '' },
+    { header: 'Reward type', value: r => r.reward_type },
+    { header: 'Reward value', value: r => r.reward_value ?? '' },
+    { header: 'Amount (GHS)', value: r => Number(r.amount).toFixed(2) },
+    { header: 'Fulfilment status', value: r => r.fulfilment_status },
+    { header: 'Reward transaction ID', value: r => r.reward_transaction_id ?? '' },
+    { header: 'Source transaction ID', value: r => r.source_transaction_id ?? '' },
+    { header: 'Counted toward drop', value: r => (Number(r.active) ? 'Yes' : 'No') },
+    { header: 'Granted at', value: r => r.created_at }
+  ];
+
+  // Deliberately still cursor-only, NOT GHA's newer `all: true` mode - that
+  // mode needs a backend deploy that hasn't happened yet, while `cursor`/
+  // `limit` are already live in production today. Walking cursor pages
+  // client-side until `nextCursor` is null gets the exact same "every row"
+  // result without waiting on that deploy, and keeps working unchanged
+  // afterwards too (cursor mode isn't going anywhere).
+  const EXPORT_PAGE_LIMIT = 500;
+  const EXPORT_MAX_ROWS = 50_000;
+
+  const fetchAllViaCursor = async (
+    filters: ListRewardsInput
+  ): Promise<{ rows: RewardHistory[]; truncated: boolean } | { error: string }> => {
+    const all: RewardHistory[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const result = await api.listRewards(baseUrl, {
+        ...filters,
+        limit: EXPORT_PAGE_LIMIT,
+        cursor
+      });
+      if (!result.ok) {
+        return { error: result.message };
+      }
+      all.push(...result.data.data);
+      if (all.length >= EXPORT_MAX_ROWS) {
+        return { rows: all, truncated: true };
+      }
+      if (!result.data.nextCursor) {
+        return { rows: all, truncated: false };
+      }
+      cursor = result.data.nextCursor;
+    }
+  };
+
+  /**
+   * Scoped to a bouquet/drop -> fetch EVERY matching row (walking cursor
+   * pages, see fetchAllViaCursor) and export that, instead of just the
+   * currently loaded page - this is the actual "export all" ask, not the
+   * "export what's loaded" fallback below. Unscoped stays as before: no safe
+   * "everything" call for the whole table, so it exports only what's been
+   * loaded via "Load more" so far.
+   */
+  const handleExport = async () => {
     const scope = filters.extBouquetId ?? filters.dropId?.slice(0, 8) ?? 'all';
-    exportToCsv<RewardHistory>(`momohour-rewards-${scope}-${ghanaDateString()}.csv`, rows, [
-      { header: 'MSISDN', value: r => r.msisdn },
-      { header: 'Bouquet', value: r => r.ext_bouquet_id },
-      { header: 'Drop ID', value: r => r.drop_id },
-      { header: 'Service', value: r => r.service_key ?? '' },
-      { header: 'Reward type', value: r => r.reward_type },
-      { header: 'Reward value', value: r => r.reward_value ?? '' },
-      { header: 'Amount (GHS)', value: r => Number(r.amount).toFixed(2) },
-      { header: 'Fulfilment status', value: r => r.fulfilment_status },
-      { header: 'Reward transaction ID', value: r => r.reward_transaction_id ?? '' },
-      { header: 'Source transaction ID', value: r => r.source_transaction_id ?? '' },
-      { header: 'Counted toward drop', value: r => (Number(r.active) ? 'Yes' : 'No') },
-      { header: 'Granted at', value: r => r.created_at }
-    ]);
+    if (!isPagedMode) {
+      exportToCsv<RewardHistory>(
+        `momohour-rewards-${scope}-${ghanaDateString()}.csv`,
+        rows,
+        REWARDS_CSV_COLUMNS
+      );
+      return;
+    }
+
+    setIsExportingAll(true);
+    try {
+      const result = await fetchAllViaCursor(filters);
+      if ('error' in result) {
+        show({ tone: 'error', title: 'Export failed', description: result.error });
+        return;
+      }
+      exportToCsv<RewardHistory>(
+        `momohour-rewards-${scope}-${ghanaDateString()}.csv`,
+        result.rows,
+        REWARDS_CSV_COLUMNS
+      );
+      show({
+        tone: 'success',
+        title: 'Export complete',
+        description: `${result.rows.length.toLocaleString()} row(s) exported.`
+      });
+      if (result.truncated) {
+        show({
+          tone: 'info',
+          title: 'Export truncated',
+          description: `Stopped at ${EXPORT_MAX_ROWS.toLocaleString()} rows - narrow the filters (e.g. by fulfilmentStatus) for the rest.`
+        });
+      }
+    } finally {
+      setIsExportingAll(false);
+    }
   };
 
   const headerDescription = isPagedMode
@@ -286,9 +368,10 @@ function RewardsPageInner() {
               <ExportCsvButton
                 onExport={handleExport}
                 disabled={rows.length === 0}
+                loading={isExportingAll}
                 title={
                   isPagedMode
-                    ? 'Exports only the current page - use the page numbers below for more'
+                    ? 'Exports every row matching this bouquet/drop filter (up to 50,000), not just the current page'
                     : "Exports only what's currently loaded below - use Load more first for a bigger export"
                 }
               />

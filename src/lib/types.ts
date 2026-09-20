@@ -141,6 +141,12 @@ export interface ListRewardsInput {
    */
   page?: number;
   pageSize?: number;
+  /**
+   * Return every matching row in one response instead of a page — also only
+   * valid when `dropId` or `extBouquetId` is set. Capped server-side at
+   * 50,000 rows (see `ListRewardsResult.truncated`).
+   */
+  all?: boolean;
 }
 
 export interface ListRewardsResult {
@@ -152,6 +158,8 @@ export interface ListRewardsResult {
   pageSize?: number;
   total?: number;
   totalPages?: number;
+  /** Only present when `all` was passed - true if there were more than 50,000 matching rows (only the first 50,000 came back). */
+  truncated?: boolean;
 }
 
 export interface CreateScheduleInput {

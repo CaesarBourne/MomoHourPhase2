@@ -385,16 +385,23 @@ so the caller can see exactly what it collided with.
 | `start_hour` / `end_hour` | VARCHAR(5) | `"18:00"` / `"19:00"` |
 | `status` | VARCHAR | `ACTIVE` \| `INACTIVE` |
 | `created_at` | DATETIME | |
-| **UNIQUE** | `campaign_date, start_hour` | race-safety net only - blocks a literal duplicate slot, not overlap in general |
 
-> **Migration note:** this table previously had `UNIQUE(campaign_date)` alone
-> (one schedule per day, no exceptions). Local dev (`synchronize:true`) picks
-> up the new `(campaign_date, start_hour)` unique index automatically on next
+No DB-level uniqueness on `(campaign_date, start_hour)` — a concurrent
+double-submit is instead guarded by a Redis lock (`withScheduleLock` in
+`MomoHourService.createSchedule`).
+
+> **Migration note:** this table went through two DB-level unique constraints
+> before landing here — first `UNIQUE(campaign_date)` alone (one schedule per
+> day, no exceptions), then `UNIQUE(campaign_date, start_hour)`
+> (`uq_momo_hour_schedule_date_hour`). The second one was dropped because a
+> plain unique index can't distinguish by `status`, so it wrongly also
+> blocked reusing a DISABLED slot's old time window — the exact "cancel one
+> bouquet at 12:00–13:00, schedule a different one at the same time" case now
+> works. Local dev (`synchronize:true`) picks this up automatically on next
 > boot. **Production runs `synchronize:false`**, so the old index has to be
-> dropped and the new one created manually there:
+> dropped manually there:
 > ```sql
-> ALTER TABLE momo_hour_campaign_schedule DROP INDEX uq_momo_hour_schedule_date;
-> ALTER TABLE momo_hour_campaign_schedule ADD UNIQUE INDEX uq_momo_hour_schedule_date_hour (campaign_date, start_hour);
+> ALTER TABLE momo_hour_campaign_schedule DROP INDEX uq_momo_hour_schedule_date_hour;
 > ```
 
 ### `momo_hour_reward_history`

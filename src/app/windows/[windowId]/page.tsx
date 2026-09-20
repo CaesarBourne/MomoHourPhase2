@@ -64,8 +64,8 @@ export default function WindowDetailPage() {
 
             <Card>
               <CardHeader
-                title="Datalake"
-                description="Every qualifying (amount ≥ 1.0), deduped MSISDN for this window."
+                title="Eligible Transactions (Data Lake)"
+                description="Every qualifying, deduped MSISDN for this window."
               />
               <CardBody>
                 <DatalakeTable
@@ -86,7 +86,7 @@ export default function WindowDetailPage() {
 
             <Card>
               <CardHeader
-                title="Data warehouse"
+                title="Fulfilled Transactions (Data Warehouse)"
                 description="Pending-manual-fulfilment rows - populated only by a successful fulfilment run."
               />
               <CardBody>

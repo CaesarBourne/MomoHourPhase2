@@ -197,7 +197,10 @@ export function DatalakeTable({
 
       <QueryState isLoading={isLoading} isError={isError} error={error}>
         {rows.length === 0 ? (
-          <EmptyState title="Datalake is empty" description="Upload a file above to stage rows here." />
+          <EmptyState
+            title="Eligible Transactions (Data Lake) is empty"
+            description="Upload a file above to stage rows here."
+          />
         ) : (
           <>
             <Table>

@@ -12,8 +12,11 @@ import * as api from '@/lib/api';
 
 /**
  * Stage A (docus/MOMO-HOUR-PHASE2.md §5.2-§5.4): upload a CSV/JSON partner
- * report for this window. Parsing, per-row validation (amount >= 1.0) and
- * per-window MSISDN dedup all happen server-side in one call - see
+ * report for this window. Parsing, per-row validation (amount >= the
+ * window's bouquet's minimum qualifying amount - config-only via
+ * MOMO_HOUR_PHASE2_MIN_AMOUNT_<extBouquetId>, falling back to the shared
+ * MOMO_HOUR_MIN_AMOUNT when unset) and per-window MSISDN dedup all happen
+ * server-side in one call - see
  * GHA/src/momo-hour-phase2/momo-hour-phase2.service.ts::uploadFile.
  */
 export function UploadForm({ windowId }: { windowId: string }) {

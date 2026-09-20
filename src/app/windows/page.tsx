@@ -22,7 +22,7 @@ export default function WindowsPage() {
   return (
     <div>
       <PageHeader
-        title="Phase 2 — Windows"
+        title="Phase 2 - Windows"
         description="Each window is one uploaded partner report (CSV/JSON), tied to one existing bouquet's past drop. Manual fulfilment data upload ETL — docus/MOMO-HOUR-PHASE2.md."
         action={
           <div className="flex items-center gap-2">
