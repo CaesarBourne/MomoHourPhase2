@@ -82,7 +82,7 @@ export function WindowServiceEditor({ window: activeWindow }: { window: Phase2Wi
         {!serviceExists && !services.isLoading ? (
           <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
             {fixedServiceKey} has not been whitelisted under {activeWindow.gha_bouquet_id} yet —
-            run the &quot;MoMo Hour Phase 2 — Bouquet Setup&quot; Postman folder (request 0) first.
+            run the &quot;MoMo Hour Phase 2 - Bouquet Setup&quot; Postman folder (request 0) first.
           </p>
         ) : (
           <div className="mt-3">

@@ -169,7 +169,7 @@ export default function DashboardPage() {
             </Link>
             <Link href="/windows">
               <Button variant="ghost" className="w-full justify-start">
-                ⧉ Phase 2 — Windows
+                ⧉ Phase 2 - Windows
               </Button>
             </Link>
           </CardBody>

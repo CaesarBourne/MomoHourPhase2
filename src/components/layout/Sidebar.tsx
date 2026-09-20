@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { href: '/schedule', label: 'Schedule', icon: '▤' },
   { href: '/drops', label: 'Drops', icon: '⚡' },
   { href: '/rewards', label: 'Rewards', icon: '★' },
-  { href: '/windows', label: 'Phase 2 — Windows', icon: '⧉' },
+  { href: '/windows', label: 'Phase 2 - Windows', icon: '⧉' },
   { href: '/settings', label: 'Settings', icon: '☰' }
 ];
 

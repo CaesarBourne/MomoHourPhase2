@@ -104,9 +104,9 @@ export function WindowForm({ onSuccess }: { onSuccess: () => void }) {
         htmlFor="ghaDropId"
         hint={
           !bouquets.isLoading && !bouquetExists
-            ? `${ghaBouquetId} hasn't been whitelisted in GHA yet - run the "MoMo Hour Phase 2 — Bouquet Setup" Postman folder (or create it from the Bouquets page) first.`
+            ? `${ghaBouquetId} hasn't been whitelisted in GHA yet - run the "MoMo Hour Phase 2 - Bouquet Setup" Postman folder (or create it from the Bouquets page) first.`
             : serviceKey && !services.isLoading && !serviceExists
-              ? `'${serviceKey}' hasn't been whitelisted under ${ghaBouquetId} yet - run the "MoMo Hour Phase 2 — Bouquet Setup" Postman folder (request 0) first.`
+              ? `'${serviceKey}' hasn't been whitelisted under ${ghaBouquetId} yet - run the "MoMo Hour Phase 2 - Bouquet Setup" Postman folder (request 0) first.`
               : !drops.isLoading && pastDrops.length === 0
                 ? `${ghaBouquetId} has no past (ended) drops yet - it needs to run at least once.`
                 : "Only drops that have already ended - a window can't reference one still running."
